@@ -1,0 +1,10 @@
+{ 
+    "connections": {
+        "name": "authentication-service",
+        "adapter": "sqlite3",
+        "filename": "service.sqlite3",
+        "projectPaths": [
+            "/Users/agrin/Projects/Townsquare/Services/Authentication"
+        ]
+    }
+}

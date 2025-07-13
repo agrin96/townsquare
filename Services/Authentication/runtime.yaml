@@ -1,0 +1,17 @@
+# Specify services that your authentication service should handle.
+services:
+  - name: application-service
+    secret: <placeholder>
+  - name: payments-service
+    secret: <placeholder>
+database:
+  tables:
+    - user.sql
+    - scope.sql
+    - scope_namespace.sql
+    - scope_group.sql
+    - scope_assignment.sql
+    - user_scope_assigments.sql
+    - user_scope_group_assigments.sql
+    - service.sql
+
