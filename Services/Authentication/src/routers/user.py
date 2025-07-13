@@ -1,8 +1,7 @@
 from __future__ import annotations
-from tokenize import group
 
 import jwt
-from typing import Annotated, cast
+from typing import Annotated
 from argon2 import PasswordHasher
 from pydantic import BaseModel 
 from datetime import (
@@ -18,7 +17,6 @@ from fastapi import (
     Security,
     status,
 )
-from fastapi.responses import RedirectResponse
 from fastapi.security import (
     OAuth2PasswordBearer,
     OAuth2PasswordRequestForm,
@@ -27,21 +25,15 @@ from fastapi.security import (
 from starlette.status import HTTP_201_CREATED
 from runtime import runtime_settings 
 from database.connector import SqliteDatabase
-from database.values import ScopeGroupValues, ScopeValues
-from dependencies import SecurityScope, database_dependency
+from database.values import ScopeValues
+from dependencies import database_dependency
 from database.models import (
     User,
     TokenData,
     UserPublic,
 )
-from database.methods import (
-    assign_scope_groups_to_user,
-    assign_scopes_to_user,
-    create_user,
-    does_user_email_exist,
-    fetch_user_for_basic_auth,
-    fetch_user_for_identifier,
-)
+from database.methods import users
+from database.models.scope import Scope
 
 
 
@@ -85,7 +77,7 @@ async def authenticate_user(
         password = password,
         salt = runtime_settings.hashing_salt,
     )
-    user = fetch_user_for_basic_auth(
+    user = users.get_by_auth(
         database = database,
         email = email,
         hashed_password = hashed_password,
@@ -103,7 +95,7 @@ async def authenticate_user_by_token(
     security_scopes: SecurityScopes,
     token: Annotated[str, Depends(oauth2_scheme)],
     database: SqliteDatabase = Depends(database_dependency),
-) -> User | RedirectResponse:
+) -> User:
     credential_validation_exception = HTTPException(
         status_code = status.HTTP_401_UNAUTHORIZED,
         detail = 'unable to validate credentials',
@@ -116,28 +108,24 @@ async def authenticate_user_by_token(
         raise credential_validation_exception
 
     # The token has expired
-    if token_data.expiration > datetime.now(tz = timezone.utc):
-        return RedirectResponse(url = router.prefix + '/token') 
+    if token_data.expiration < datetime.now(tz = timezone.utc):
+        raise HTTPException(
+            status_code = status.HTTP_401_UNAUTHORIZED,
+            detail = 'expired',
+        ) 
 
-    user = fetch_user_for_identifier(database = database, identifier = token_data.subject)
+    securities = [Scope(scope = value) for value in security_scopes.scopes]
+    for security in securities:
+        if not token_data.is_valid_scope(security):
+            raise HTTPException(
+                status_code = status.HTTP_403_FORBIDDEN,
+                detail = 'insufficient permissions',
+            )
+
+    user = users.get_by_identifier(database = database, identifier = token_data.subject)
     if user is None:
         print(f'User not found')
         raise credential_validation_exception
-
-    securities = cast(list[SecurityScope], security_scopes.scopes)
-    for security in securities:
-        for scope_group in security.scope_groups:
-            if not token_data.is_valid_scope_group(scope_group):
-                raise HTTPException(
-                    status_code = status.HTTP_403_FORBIDDEN,
-                    detail = 'insufficient permissions',
-                )
-        for scope in security.scopes:
-            if not token_data.is_valid_scope(scope):
-                raise HTTPException(
-                    status_code = status.HTTP_403_FORBIDDEN,
-                    detail = 'insufficient permissions',
-                )
     return user
 
 
@@ -178,7 +166,7 @@ async def register_user(
     form: Annotated[OAuth2PasswordRequestForm, Depends()],
     database: SqliteDatabase = Depends(database_dependency),
 ):
-    if does_user_email_exist(database = database, email = form.username):
+    if users.does_email_exist(database = database, email = form.username):
         raise HTTPException(
             status_code = 409,
             detail = 'An account with that email address already exists'
@@ -189,21 +177,17 @@ async def register_user(
     )
 
     database.execute('BEGIN')
-    new_user = create_user(
+    new_user = users.create(
         database = database,
         email = form.username,
         hashed_password = hashed_password
     )
-    assign_scopes_to_user(
-        database = database,
-        user = new_user,
-        assignments = [],
-    )
-    assign_scope_groups_to_user(
+    users.assign_scopes(
         database = database,
         user = new_user,
         assignments = [
-            ScopeGroupValues.basic_user.value,
+            ScopeValues.status.value,
+            ScopeValues.user_self_full.value,
         ],
     )
     database.execute('COMMIT')
@@ -211,24 +195,13 @@ async def register_user(
 
 
 
-get_user_scopes = SecurityScope(
-    scopes = [
-        ScopeValues.self_full.value,
-    ],
-    scope_groups = [
-        ScopeGroupValues.basic_user.value,
-        ScopeGroupValues.authentication_admin.value,
-    ]
-)
-
 UserDependancy = Annotated[
-    User | RedirectResponse,
-    Security(authenticate_user_by_token, scopes = [get_user_scopes])
+    User,
+    Security(authenticate_user_by_token, scopes = [
+        ScopeValues.user_self_read.scope_string
+    ])
 ]
 
 @router.get('/current', response_model = UserPublic)
 async def get_user(current_user: UserDependancy):
-    if isinstance(current_user, User):
-        return UserPublic(email = current_user.email) 
-    # Redirect to login screen
-    return current_user
+    return UserPublic(email = current_user.email) 

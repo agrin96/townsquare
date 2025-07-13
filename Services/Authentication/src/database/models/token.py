@@ -1,31 +1,21 @@
 from __future__ import annotations
 from typing import Annotated, Any
 from datetime import datetime, timedelta, timezone
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, PlainSerializer
-
+from pydantic import (
+    Field,
+    BaseModel,
+    ConfigDict,
+    BeforeValidator,
+    PlainSerializer,
+)
 from .scope import Scope
-from .scope_group import ScopeGroup
-
-
-
-def validate_scope_group(value: Any) -> list[ScopeGroup]:
-    if not (isinstance(value, list) or isinstance(value, tuple) or isinstance(value, list)):
-        return list()
-
-    values = tuple(value)
-    if len(values) == 0:
-        return list()
-
-    if (isinstance(values[0], str)):
-        return list(ScopeGroup(group = v) for v in values) 
-
-    if (isinstance(values[0], ScopeGroup)):
-        return list(values) 
-    raise ValueError(f'Unrecognized input for scope_group: {type(value)} {values}')
 
 
 
 def validate_scope(value: Any) -> list[Scope]:
+    if isinstance(value, str):
+        return [ Scope(scope = v) for v in value.split(' ')]
+
     if not (isinstance(value, list) or isinstance(value, tuple)):
         return [] 
 
@@ -35,18 +25,26 @@ def validate_scope(value: Any) -> list[Scope]:
     if (isinstance(value[0], str)):
         return [ Scope(scope = v) for v in value ]
 
+    if (isinstance(value[0], dict)):
+        return [ Scope(scope = v['scope']) for v in value]
+
     if (isinstance(value[0], Scope)):
         return list(value) 
-    raise ValueError(f'Unrecognized input for scope_group: {type(value)} {value}')
-
-
-
-def serialize_scope_group(values: list[ScopeGroup]) -> list[str]:
-    return [v.group for v in values]
+    raise ValueError(f'Unrecognized input for scope: {type(value)} {value}')
 
 
 
 class TokenData(BaseModel):
+    '''### Summary
+    Represents a parsed JWT token or data about to be transformed into a JWT token.
+
+    ### Parameters
+    - `subject` This is the token subject whether that is a user id or email or some other
+    identifier. Preferrably the identifier should be something we don't care if it gets out.
+    - `expiration` The set expiration datetime of the token. After this time, the token
+    becomes invalid and a new one must be generated.
+    - `scopes` A list of Scopes (permissions) associated with this token. These scopes
+    are validated against the route securities to grant or deny access.'''
     model_config = ConfigDict(populate_by_name = True, extra = 'ignore')
 
     subject: str = Field(serialization_alias = 'sub')
@@ -62,26 +60,23 @@ class TokenData(BaseModel):
     scopes: Annotated[
         list[Scope],
         BeforeValidator(validate_scope),
+        PlainSerializer(lambda value: ' '.join([str(v) for v in value])),
     ] = Field(default_factory = list)
 
-    scope_groups: Annotated[
-        list[ScopeGroup],
-        PlainSerializer(serialize_scope_group),
-        BeforeValidator(validate_scope_group),
-    ] = Field(default_factory = list)
+        
+    def is_valid_scope(self, security: Scope) -> bool:
+        '''### Summary
+        Validate security scope against the set of scopes in this token data. Checks if 
+        the token data has the permissions required by the security.
 
-    @property
-    def total_scopes(self) -> set[Scope]:
-        unified = set(self.scopes)
-        for group in self.scope_groups:
-            group_scopes = set(group.scopes)
-            unified = unified.intersection(group_scopes)
-        return unified
+        ### Parameters
+        - `security` The security scope we are checking against. This is the minimal
+        permission needed to access whatever resource we are accessing
 
-    def is_valid_scope_group(self, group: ScopeGroup) -> bool:
-        values = [sg.group for sg in self.scope_groups]
-        return group.group in values
-
-    def is_valid_scope(self, scope: Scope) -> bool:
-        scopes = self.total_scopes
-        return scope in scopes
+        ### Returns
+        True if the token data has the necessary permissions required by the security
+        scope.'''
+        for key in self.scopes:
+            if key.contains_scope(scope = security):
+                return True
+        return False

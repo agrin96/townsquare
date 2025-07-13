@@ -3,22 +3,28 @@ from database import SqliteDatabase
 
 
 
+# NOTE: Define table initialization order here. MUST match file names. Using table names
+# is reccomended!
 ordered_tables = [
     'scopes',
-    'scope_groups',
-    'group_token_lifespan',
-    'scope_assignments',
     'users',
     'user_scope_assignments',
-    'user_scope_group_assignments',
     'services',
     'service_scope_assignments',
-    'service_scope_group_assignments',
 ]
 
 
 
 def create_tables(database: SqliteDatabase, directory: str = './Database/Tables/'):
+    '''### Summary
+    Initialize database tables by reading in a directory of table definition files. The
+    files are then executed in the order specified in this file via the `ordered_tables`
+    definition. This ensures that dependencies/constraints are properly accounted for
+    since SQLite cannot automatically resolve dependencies here.
+
+    ### Parameters:
+    - `database` A connection object
+    - `directory` Path to a directory of table definition files like <table_name>.sql'''
     directory_files = [ 
         file for file in os.listdir(directory) 
         if file.endswith('.sql')
@@ -38,6 +44,10 @@ def create_tables(database: SqliteDatabase, directory: str = './Database/Tables/
 
 
 def drop_tables(database: SqliteDatabase):
+    '''### Summary
+    When we need to do a hard reset of our database we drop the defined tables in the
+    reverse order of their creation. This ensures that foreign key cascade sare properly
+    handled and we wont get errors thrown.'''
     with database:
         for table_name in reversed(ordered_tables):
             print(f'Dropping {table_name}')
