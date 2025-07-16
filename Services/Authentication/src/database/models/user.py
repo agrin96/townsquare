@@ -1,20 +1,38 @@
 from __future__ import annotations
 from uuid import UUID, uuid4
-from typing import Any
-from pydantic import BaseModel, Field
-
+from typing import Annotated
+from pydantic import BaseModel, Field, PlainSerializer
 from .scope import Scope
-from .token import TokenData
 
 
+
+UUIDString = Annotated[UUID, PlainSerializer(lambda v: str(v))]
 
 class UserBase(BaseModel):
     email: str | None = None
-    identifier: UUID = Field(default_factory = uuid4)
+
+
+
+class UserRequest(UserBase):
+    '''### Summary
+    Represents the possible options for a route request based on the User object. The
+    request object is different in that all the fields are optional since not every
+    field may be needed.
+    
+    ### Parameters
+    - `id` The internal database id of this row
+    - `identifier` The user unique id we can pass around our services
+    - `email` The email of the user
+    - `token_lineage` The token lineage is an identifier of the current valid set of 
+    access and refresh tokens. Each token should have a lineage value checked against the
+    lineage value of the user.'''
+    id: int | None = None
+    email: str | None = None
+    identifier: UUIDString | None = None
+    token_lineage: UUIDString | None = None
 
 
  
-SET_BY_DATABASE: Any = object()
 class DatabaseUser(UserBase):
     '''### Summary
     Raw database representation of our user. May include data uncessary throughout most
@@ -24,9 +42,14 @@ class DatabaseUser(UserBase):
     - `id` The internal database id of this row
     - `identifier` The user unique id we can pass around our services
     - `email` The email of the user
+    - `token_lineage` The token lineage is an identifier of the current valid set of 
+    access and refresh tokens. Each token should have a lineage value checked against the
+    lineage value of the user.
     - `hashed_password` The hashed password of the user created at registration'''
-    id: int = SET_BY_DATABASE 
-    hashed_password: str | None = None
+    id: int
+    identifier: UUIDString
+    hashed_password: str
+    token_lineage: UUIDString
 
 
 
@@ -37,15 +60,13 @@ class User(UserBase):
     ### Parameters
     - `identifier` The user unique id we can pass around our services
     - `email` The email of the user
+    - `token_lineage` The token lineage is an identifier of the current valid set of 
+    access and refresh tokens. Each token should have a lineage value checked against the
+    lineage value of the user.
     - `scopes` The set of scopes assigned to this user'''
     scopes: list[Scope] = Field(default_factory = list)
-
-    @property
-    def token_data(self) -> TokenData:
-        return TokenData(
-            subject = str(self.identifier),
-            scopes = self.scopes,
-        )
+    identifier: UUIDString = Field(default_factory = uuid4)
+    token_lineage: UUIDString = Field(default_factory = uuid4)
 
 
 
@@ -56,4 +77,4 @@ class UserPublic(UserBase):
     ### Parameters
     - `identifier` The user unique id we can pass around our services
     - `email` The email of the user'''
-    pass
+    identifier: UUIDString

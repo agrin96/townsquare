@@ -1,6 +1,7 @@
 from __future__ import annotations
 from typing import Annotated, Any
 from datetime import datetime, timedelta, timezone
+from uuid import UUID
 from pydantic import (
     Field,
     BaseModel,
@@ -10,6 +11,9 @@ from pydantic import (
 )
 from .scope import Scope
 
+
+
+UUIDString = Annotated[UUID, PlainSerializer(lambda v: str(v))]
 
 
 def validate_scope(value: Any) -> list[Scope]:
@@ -43,11 +47,18 @@ class TokenData(BaseModel):
     identifier. Preferrably the identifier should be something we don't care if it gets out.
     - `expiration` The set expiration datetime of the token. After this time, the token
     becomes invalid and a new one must be generated.
+    - `lineage` The token lineage is an identifier of the current valid set of access
+    and refresh tokens. Each token should have a lineage value checked against the
+    lineage value of the user.
+    - `key_id` The id of the WebKey which was used to sign this request and as such must
+    be used to validate the request.
     - `scopes` A list of Scopes (permissions) associated with this token. These scopes
     are validated against the route securities to grant or deny access.'''
     model_config = ConfigDict(populate_by_name = True, extra = 'ignore')
 
-    subject: str = Field(serialization_alias = 'sub')
+    subject: str = Field(alias = 'sub')
+    lineage: UUIDString
+    key_id: UUIDString = Field(alias = 'kid')
 
     expiration: Annotated[
         datetime,

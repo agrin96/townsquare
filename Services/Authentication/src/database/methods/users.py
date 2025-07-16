@@ -1,36 +1,12 @@
 from __future__ import annotations
+from uuid import UUID, uuid4
 from textwrap import dedent
 
+from fastapi import status
 from fastapi import HTTPException
-from starlette.status import HTTP_500_INTERNAL_SERVER_ERROR
-from database.models.scope import DatabaseScope
 from database.connector import SqliteDatabase
-from database.models import (
-    User,
-    Scope,
-    DatabaseUser,
-)
-
-
-
-def get_scopes(database: SqliteDatabase, user_id: int) -> list[Scope]:
-    return database.fetchall(
-        statements = dedent('''
-            SELECT
-                scope 
-            FROM (
-                (
-                    SELECT scope_id
-                    FROM user_scope_assignments
-                    WHERE user_id = @id
-                ) a
-                INNER JOIN scopes b
-                ON a.scope_id = b.id
-            )
-        '''),
-        return_type = Scope,
-        bindings = {'id': user_id}
-    )
+from database.models import User, DatabaseUser
+from .scopes import get_scopes
 
 
 
@@ -46,6 +22,7 @@ def get_by_auth(
               id,
               identifier,
               email,
+              token_lineage,
               hashed_password
             FROM users
             WHERE
@@ -63,6 +40,7 @@ def get_by_auth(
     return User(
         identifier = user.identifier,
         email = user.email,
+        token_lineage = user.token_lineage,
         scopes = get_scopes(database = database, user_id = user.id),
     )
 
@@ -80,6 +58,7 @@ def get_by_email(database: SqliteDatabase, email: str) -> User | None:
     return User(
         identifier = user.identifier,
         email = user.email,
+        token_lineage = user.token_lineage,
         scopes = get_scopes(database = database, user_id = user.id),
     )
 
@@ -91,13 +70,14 @@ def does_email_exist(database: SqliteDatabase, email: str) -> bool:
 
 
 
-def get_by_identifier(database: SqliteDatabase, identifier: str) -> User | None:
+def get_by_identifier(database: SqliteDatabase, identifier: UUID | str) -> User | None:
     user = database.fetchone(
         return_type = DatabaseUser,
         statements = dedent('''
             SELECT
               id,
               identifier,
+              token_lineage,
               email,
               hashed_password
             FROM users
@@ -105,7 +85,7 @@ def get_by_identifier(database: SqliteDatabase, identifier: str) -> User | None:
               identifier = @identifier
         '''),
         bindings = {
-            'identifier': identifier,
+            'identifier': identifier if isinstance(identifier, str) else str(identifier),
         }
     )
     if user is None:
@@ -114,80 +94,108 @@ def get_by_identifier(database: SqliteDatabase, identifier: str) -> User | None:
     return User(
         identifier = user.identifier,
         email = user.email,
+        token_lineage = user.token_lineage,
         scopes = get_scopes(database = database, user_id = user.id),
     )
 
 
 
-def create(database: SqliteDatabase, email: str, hashed_password: str) -> DatabaseUser:
-    user = DatabaseUser(
-        email = email,
-        hashed_password = hashed_password,
-    )
-    database.execute(
+def get_by_id(database: SqliteDatabase, id: int) -> User | None:
+    user = database.fetchone(
+        return_type = DatabaseUser,
         statements = dedent('''
-            INSERT INTO users VALUES (
+            SELECT
+              id,
+              identifier,
+              token_lineage,
+              email,
+              hashed_password
+            FROM users
+            WHERE
+              identifier = @identifier
+        '''),
+        bindings = {'id': id}
+    )
+    if user is None:
+        return None
+
+    return User(
+        identifier = user.identifier,
+        email = user.email,
+        token_lineage = user.token_lineage,
+        scopes = get_scopes(database = database, user_id = user.id),
+    )
+
+
+
+def create(
+    database: SqliteDatabase,
+    email: str,
+    hashed_password: str,
+    ignore_if_exists: bool = False,
+) -> DatabaseUser:
+    database.execute(
+        statements = dedent(f'''
+            INSERT{' OR IGNORE ' if ignore_if_exists else ' '}INTO users VALUES (
                 NULL,
                 @identifier,
+                @lineage,
                 @email,
                 @hashed_password
             ) 
         '''),
         bindings = {
-            'identifier': str(user.identifier),
-            'email': user.email,
-            'hashed_password': user.hashed_password,
+            'identifier': str(uuid4()),
+            'email': email,
+            'lineage': str(uuid4()),
+            'hashed_password': hashed_password,
         }
     )
     created_user = database.fetchone(
-        'SELECT * FROM users WHERE identifier=?',
+        statements = 'SELECT * FROM users WHERE email = @email',
         return_type = DatabaseUser,
-        bindings = (str(user.identifier),)
+        bindings = {'email': email}
     )
     if created_user is None:
-        raise HTTPException(status_code = HTTP_500_INTERNAL_SERVER_ERROR)
+        raise HTTPException(status_code = status.HTTP_500_INTERNAL_SERVER_ERROR)
     return created_user
 
 
 
-def assign_scopes(
-    database: SqliteDatabase,
-    user: DatabaseUser,
-    assignments: list[Scope],
-):
-    if not assignments:
-        return
-
-    assignments_string = ','.join(f"('{(s)}')" for s in assignments)
-    missing_scopes = database.simple_fetchall(
-        statements = dedent(f'''
-            WITH candidate_values(scope) AS ( VALUES {assignments_string} )
-            SELECT scope
-            FROM candidate_values
-            WHERE scope NOT IN (SELECT scope FROM scopes) 
-        ''')
-    )
-    if missing_scopes:
-        unrecognized = [ v['scope'] for v in missing_scopes ]
-        print(
-            f'Unrecognized scopes. Scopes must be registered before assignment.'
-            f' Unrecognized = {unrecognized}'
-        )
-        raise HTTPException(status_code = HTTP_500_INTERNAL_SERVER_ERROR)
-
-    assignments_string = ','.join(f"'{s}'" for s in assignments)
-    scopes = database.fetchall(
-        statements = f'SELECT * FROM scopes WHERE scope IN ({assignments_string})',
-        return_type = DatabaseScope,
-    )
-    database.executemany(
+def delete(database: SqliteDatabase, user: User):
+    database.execute('BEGIN')
+    database.execute(
         statements = dedent('''
-            INSERT INTO user_scope_assignments VALUES (
-                NULL,
-                @user,
-                @scope
+            DELETE FROM user_scope_assignments
+            WHERE user_id = (
+                SELECT id FROM users WHERE identifier=@identifier
             );
         '''),
-        sequenceofbindings = [{'user': user.id, 'scope': s.id} for s in scopes]
-    )
+        bindings = {'identifier': str(user.identifier)},
+    ) 
+    database.execute(
+        statements = dedent('''
+            DELETE FROM users 
+            WHERE identifier=@identifier;
+        '''),
+        bindings = {'identifier': str(user.identifier)},
+    ) 
+    database.execute('COMMIT')
 
+
+
+def update_lineage(database: SqliteDatabase, user: User) -> User:
+    new_lineage = uuid4()
+    database.execute(
+        statements = dedent('''
+            UPDATE users
+            SET token_lineage=@lineage
+            WHERE identifier=@identifier
+        '''),
+        bindings = {
+            'lineage': str(new_lineage),
+            'identifier': str(user.identifier),
+        }
+    )
+    user.token_lineage = new_lineage
+    return user

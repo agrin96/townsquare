@@ -11,6 +11,7 @@ ordered_tables = [
     'user_scope_assignments',
     'services',
     'service_scope_assignments',
+    'json_web_keys',
 ]
 
 
