@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Annotated, Any
 from datetime import datetime, timedelta, timezone
-from uuid import UUID
 from pydantic import (
     Field,
     BaseModel,
@@ -10,10 +9,9 @@ from pydantic import (
     PlainSerializer,
 )
 from .scope import Scope
+from common import UUIDString
 
 
-
-UUIDString = Annotated[UUID, PlainSerializer(lambda v: str(v))]
 
 
 def validate_scope(value: Any) -> list[Scope]:

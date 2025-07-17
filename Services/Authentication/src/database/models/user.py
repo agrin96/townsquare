@@ -1,12 +1,11 @@
 from __future__ import annotations
-from uuid import UUID, uuid4
-from typing import Annotated
-from pydantic import BaseModel, Field, PlainSerializer
+from uuid import uuid4
+from pydantic import BaseModel, Field
+
 from .scope import Scope
+from common import UUIDString
 
 
-
-UUIDString = Annotated[UUID, PlainSerializer(lambda v: str(v))]
 
 class UserBase(BaseModel):
     email: str | None = None

@@ -1,5 +1,5 @@
 import os
-from database import SqliteDatabase
+from database.connector import SqliteDatabase
 
 
 

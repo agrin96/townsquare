@@ -1,18 +1,15 @@
 from __future__ import annotations
 import base64
-from datetime import datetime
 from enum import Enum
-from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import uuid4
+from datetime import datetime
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from pydantic import BaseModel, ConfigDict, Field
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
-
-
-UUIDString = Annotated[UUID, PlainSerializer(lambda v: str(v))]
+from common import UUIDString
 
 
 
@@ -24,7 +21,7 @@ class KeyType(str, Enum):
 
 
 class Algorithm(str, Enum):
-    '''### Parameters
+    '''### Members 
     - `RSA256` If using RSA then you will need to generate a secret key using OPENSSL.
     This is done by running "openssl genrsa -out private.pem 2048". This key can be
     exported to your environment via "export SECRET_KEY=$(cat private.pem)"

@@ -1,56 +1,21 @@
 from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
+import os
 
 from fastapi import FastAPI
 from runtime import runtime_settings
+from filelock import FileLock, Timeout
 from contextlib import asynccontextmanager
 
 import routers
 from database.connector import SqliteDatabase
 from database.tables import create_tables
-from database.values import create_serivice_admin, insert_scope_values
-from database.methods import webkeys
-from dependencies import create_webkey
-
-
-
-async def certificate_rotation(database: SqliteDatabase):
-    while True:
-        current_keys = webkeys.get_keys(database)
-        if len(current_keys) == 0:
-            print('Creating new key for empty database')
-            new_webkey = create_webkey() 
-            webkeys.insert(database, key = new_webkey)
-
-        timenow = datetime.now(tz = timezone.utc)
-        if len(current_keys) == 1:
-            # We only have a current key. If the current key is expiring in 40 days or 
-            # less, we can create a new current key (rotate keys). 
-            print('Checking current key for rotation need')
-            ttl = current_keys[0].not_valid_after - timenow
-            if ttl <= timedelta(days = 40):
-                new_webkey = create_webkey()
-                webkeys.insert(database, key = new_webkey)
-
-        if len(current_keys) == 2:
-            current, previous = current_keys[0], current_keys[1]
-
-            # If the preivous key is expiring in 3 days or less, we can invalidate it.
-            # and delete it.
-            ttl = previous.not_valid_after - timenow
-            if ttl <= timedelta(days = 3):
-                webkeys.delete(database = database, key = previous)
-
-            # If the current key is expiring in 40 days or less, we can create a new 
-            # current key (rotate keys)
-            ttl = current.not_valid_after - timenow
-            if ttl <= timedelta(days = 40):
-                new_webkey = create_webkey()
-                webkeys.insert(database, key = new_webkey)
-
-        print('going to sleep')
-        await asyncio.sleep(60 * 60 * 24)
+from database.values import (
+    create_serivice_admin,
+    create_scope_values,
+    run_certificate_rotation,
+)
 
 
 
@@ -60,29 +25,36 @@ async def lifespan(app: FastAPI):
     create_tables(database = database) 
     print('Created database tables')
     
-    insert_scope_values(database = database)
+    create_scope_values(database = database)
     print('Inserted predefined scope values')
 
     create_serivice_admin(database = database)
     print('Created service admin')
 
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, create_serivice_admin, database)
-    # await certificate_rotation(database = database)
-    print('Launched certificate rotation')
+    # NOTE: When running with multiple workers this prevents us from launching several 
+    # background tasks at the same time.
+    lock = FileLock('certificate_rotation.lock', timeout = 3)
+    try:
+        lock.acquire()
+        asyncio.create_task(run_certificate_rotation())
+        print('Launched certificate rotation')
+    except Timeout:
+        print('certificate_rotation locked by another worker.')
 
     yield
     # drop_tables(database = database)
     database.close()
+    lock.release()
+    os.remove(lock.lock_file)
     
 
 
 app = FastAPI(lifespan = lifespan)
 app.include_router(routers.user.router)
+app.include_router(routers.service.router)
 
 
 # TODO: 
-# 6. Add JWTK auto rotation every X days. (keep at most 2 keys in the valid list (old + new))
 # 7. Add service registration method (service_name + password (random hash from source env))
 # 8. Add service endpoint for registering new scopes
 # 9. Add super admin method for CRUDing scopes/users/services.

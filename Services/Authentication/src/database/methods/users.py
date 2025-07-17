@@ -6,11 +6,11 @@ from fastapi import status
 from fastapi import HTTPException
 from database.connector import SqliteDatabase
 from database.models import User, DatabaseUser
-from .scopes import get_scopes
+from .scopes import get_user_scopes
 
 
 
-def get_by_auth(
+def get_for_credentials(
     database: SqliteDatabase,
     email: str,
     hashed_password: str,
@@ -41,7 +41,7 @@ def get_by_auth(
         identifier = user.identifier,
         email = user.email,
         token_lineage = user.token_lineage,
-        scopes = get_scopes(database = database, user_id = user.id),
+        scopes = get_user_scopes(database = database, user_id = user.id),
     )
 
 
@@ -59,7 +59,7 @@ def get_by_email(database: SqliteDatabase, email: str) -> User | None:
         identifier = user.identifier,
         email = user.email,
         token_lineage = user.token_lineage,
-        scopes = get_scopes(database = database, user_id = user.id),
+        scopes = get_user_scopes(database = database, user_id = user.id),
     )
 
 
@@ -81,8 +81,7 @@ def get_by_identifier(database: SqliteDatabase, identifier: UUID | str) -> User 
               email,
               hashed_password
             FROM users
-            WHERE
-              identifier = @identifier
+            WHERE identifier = @identifier
         '''),
         bindings = {
             'identifier': identifier if isinstance(identifier, str) else str(identifier),
@@ -95,7 +94,7 @@ def get_by_identifier(database: SqliteDatabase, identifier: UUID | str) -> User 
         identifier = user.identifier,
         email = user.email,
         token_lineage = user.token_lineage,
-        scopes = get_scopes(database = database, user_id = user.id),
+        scopes = get_user_scopes(database = database, user_id = user.id),
     )
 
 
@@ -111,8 +110,7 @@ def get_by_id(database: SqliteDatabase, id: int) -> User | None:
               email,
               hashed_password
             FROM users
-            WHERE
-              identifier = @identifier
+            WHERE id = @id
         '''),
         bindings = {'id': id}
     )
@@ -123,7 +121,7 @@ def get_by_id(database: SqliteDatabase, id: int) -> User | None:
         identifier = user.identifier,
         email = user.email,
         token_lineage = user.token_lineage,
-        scopes = get_scopes(database = database, user_id = user.id),
+        scopes = get_user_scopes(database = database, user_id = user.id),
     )
 
 

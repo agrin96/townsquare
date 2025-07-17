@@ -8,6 +8,7 @@ dependencies = [
     "apsw>=3.50.2.0",
     "argon2-cffi>=25.1.0",
     "fastapi[standard]>=0.115.14",
+    "filelock>=3.18.0",
     "pydantic-settings>=2.10.1",
     "pyjwt[crypto]>=2.10.1",
 ]

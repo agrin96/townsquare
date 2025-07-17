@@ -33,10 +33,11 @@ from database.models import (
     TokenData,
     UserPublic,
 )
-from database.methods import users, scopes, webkeys
 from database.models.scope import Scope
 from database.models.user import UserRequest
-from database.models.jwk import WebKey, WebKeyPublic
+from database.models.jwk import WebKeyPublic
+from database.methods import users, scopes, webkeys
+from .common import TokenPublic, create_token
 
 
 
@@ -53,13 +54,6 @@ oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl = router.prefix + '/token',
     refreshUrl = router.prefix + '/refresh',
 )
-
-
-
-class TokenPublic(BaseModel):
-    access_token: str
-    token_type: str
-    refresh_token: str | None = None
 
 
 
@@ -83,7 +77,7 @@ async def authenticate_password_credentials(
         password = password,
         salt = runtime_settings.hashing_salt,
     )
-    user = users.get_by_auth(
+    user = users.get_for_credentials(
         database = database,
         email = email,
         hashed_password = hashed_password,
@@ -148,20 +142,6 @@ async def authenticate_token(
             )
     return user 
 
-
-
-def create_token(data: TokenData, webkey: WebKey, expires: timedelta | None = None):
-    '''### Summary'''
-    payload = data.model_dump() 
-    if expires:
-        expiration = datetime.now(tz = timezone.utc) + expires
-        payload['exp'] = expiration
-
-    return jwt.encode(
-        payload = payload,
-        key = webkey.private_pem,
-        algorithm = webkey.algorithm.value,
-    ) 
 
 
 
@@ -276,7 +256,7 @@ async def create_new_user(
         email = form.username,
         hashed_password = hashed_password
     )
-    scopes.assign_scopes(
+    scopes.assign_scopes_to_user(
         database = database,
         user_id = new_user.id,
         assignments = [

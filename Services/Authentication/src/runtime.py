@@ -1,9 +1,27 @@
-from enum import Enum
 from typing import Any
 from datetime import timedelta
 from pydantic_settings import BaseSettings, SettingsConfigDict
+    
 
 
+class CertificateRotationSettings(BaseSettings):
+    '''### Summary
+    Controls the key rotation system. Determines how long keys live and when they should
+    expire
+    
+    ### Parameters
+    - `key_lifetime` How many days a key should be active at most.
+    - `rotate_key_days_remaining` When there are this many days remaining in the current
+    keys lifecycle, we should create a enw key to be the current.
+    - `expire_key_days_remaining` At how many days remaining we should completly expire
+    the current (previous) key. We keep this above zero since we want to expire before 
+    the actual date, otherwise there would be 3 keys.
+    '''
+    key_lifetime: timedelta = timedelta(days = 90)
+    rotate_key_days_remaining: timedelta = timedelta(days = 40)
+    expire_key_days_remaining: timedelta = timedelta(days = 2)
+
+    
 
 SET_FROM_ENVIRONMENT: Any = object()
 class Runtime(BaseSettings):
@@ -23,6 +41,7 @@ class Runtime(BaseSettings):
     service_password: str       = SET_FROM_ENVIRONMENT
     token_expiration: timedelta = timedelta(seconds = 3_600)
     database_file: str          = './test.sqlite' 
+    certificate_rotation: CertificateRotationSettings = CertificateRotationSettings()
 
 
 
