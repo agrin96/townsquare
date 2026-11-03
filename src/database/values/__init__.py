@@ -21,15 +21,15 @@ class ScopeValues(Enum):
     Here we define the scopes that are used and valid for this service. These are built in
     and do not require additional setup. Additional scopes must be regested via dedicated
     serivce or admin methods.'''
-    status                   = Scope(scope = ('authentication', 'status'))
-    token_refreh             = Scope(scope = ('authentication', 'token', 'refresh'))
-    user_self_read           = Scope(scope = ('authentication', 'user', 'self', 'read'))
-    user_self_deregister     = Scope(scope = ('authentication', 'user', 'self', 'deregister'))
-    user_self_full           = Scope(scope = ('authentication', 'user', 'self'))
-    user_register            = Scope(scope = ('authentication', 'user', 'register'))
-    admin_lineage_invalidate = Scope(scope = ('authentication', 'admin', 'user', 'lineage', 'invalidate'))
-    admin_user_full          = Scope(scope = ('authentication', 'admin', 'user'))
-    admin_service            = Scope(scope = ('authentication',))
+    status                   = Scope(provider = 'authentication', scope = ('authentication', 'status'))
+    token_refreh             = Scope(provider = 'authentication', scope = ('authentication', 'token', 'refresh'))
+    user_self_read           = Scope(provider = 'authentication', scope = ('authentication', 'user', 'self', 'read'))
+    user_self_deregister     = Scope(provider = 'authentication', scope = ('authentication', 'user', 'self', 'deregister'))
+    user_self_full           = Scope(provider = 'authentication', scope = ('authentication', 'user', 'self'))
+    user_register            = Scope(provider = 'authentication', scope = ('authentication', 'user', 'register'))
+    admin_lineage_invalidate = Scope(provider = 'authentication', scope = ('authentication', 'admin', 'user', 'lineage', 'invalidate'))
+    admin_user_full          = Scope(provider = 'authentication', scope = ('authentication', 'admin', 'user'))
+    admin_service            = Scope(provider = 'authentication', scope = ('authentication',))
 
     @property
     def scope_string(self) -> str:
@@ -43,7 +43,7 @@ def create_scope_values(database: SqliteDatabase):
     permissions for the authentication service. Run this in a lifecycle event'''
     with database:
         database.executemany(
-            statements = 'INSERT OR IGNORE INTO scopes VALUES (NULL, @scope);',
+            statements = 'INSERT OR IGNORE INTO scopes VALUES (NULL, @provider, @scope);',
             sequenceofbindings = [scope.value.model_dump() for scope in ScopeValues]
         )
 

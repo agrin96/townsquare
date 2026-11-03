@@ -23,6 +23,12 @@ class CertificateRotationSettings(BaseSettings):
 
     
 
+class TokenLifetime(BaseSettings):
+    access: timedelta
+    refresh: timedelta
+
+
+
 SET_FROM_ENVIRONMENT: Any = object()
 class Runtime(BaseSettings):
     '''### Summary
@@ -41,7 +47,16 @@ class Runtime(BaseSettings):
     service_password: str       = SET_FROM_ENVIRONMENT
     token_expiration: timedelta = timedelta(seconds = 3_600)
     database_file: str          = './test.sqlite' 
+
     certificate_rotation: CertificateRotationSettings = CertificateRotationSettings()
+    user_token_lifetime: TokenLifetime = TokenLifetime(
+        access = timedelta(minutes = 10),
+        refresh = timedelta(days = 30)
+    )
+    service_token_lifetime: TokenLifetime = TokenLifetime(
+        access = timedelta(days = 18),
+        refresh = timedelta(days = 180)
+    )
 
 
 

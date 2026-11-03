@@ -1,6 +1,6 @@
 from __future__ import annotations
 import jwt
-from typing import Annotated
+from typing import Annotated, Sequence
 from argon2 import PasswordHasher
 from datetime import (
     datetime,
@@ -20,21 +20,22 @@ from fastapi.security import (
     OAuth2PasswordRequestForm,
     SecurityScopes,
 )
+from pydantic import BaseModel
 from runtime import runtime_settings 
 from dependencies import database_dependency
 from database.values import ScopeValues
 from database.connector import SqliteDatabase
 from database.models import TokenData
-from database.models.scope import Scope
+from database.models.scope import Scope, ScopeString
 
-from .common import TokenPublic, create_token
+from .security import TokenPublic, create_token, parse_token
 from database.models.service import Service
 from database.methods import services, scopes, webkeys
 
 
 
 router = APIRouter(
-    prefix = '/service',
+    prefix = '/services',
     tags = ['services'],
     dependencies = [],
 )
@@ -49,9 +50,9 @@ oauth2_scheme = OAuth2PasswordBearer(
 
 
 
-async def authenticate_password_credentials(
+async def authenticate_service(
     service_name: str,
-    password: str,
+    secret: str,
     database: SqliteDatabase,
 ) -> Service:
     '''### Summary
@@ -60,19 +61,15 @@ async def authenticate_password_credentials(
 
     ### Parameters
     - `service_name` The service name 
-    - `secret` The service registration password 
+    - `secret` The service registration secret token 
     - `database` database connector instance 
 
     ### Returns
     A Service object if authentication succeeded'''
-    hashed_secret = password_hasher.hash(
-        password = password,
-        salt = runtime_settings.hashing_salt,
-    )
     service = services.get_for_credentials(
         database = database,
         service_name = service_name,
-        secret = hashed_secret, 
+        secret = secret, 
     )
     if service is None:
         raise HTTPException(
@@ -83,7 +80,7 @@ async def authenticate_password_credentials(
 
 
 
-async def authenticate_token(
+async def authenticate_service_token(
     security_scopes: SecurityScopes,
     token: Annotated[str, Depends(oauth2_scheme)],
     database: SqliteDatabase = Depends(database_dependency),
@@ -92,19 +89,8 @@ async def authenticate_token(
         status_code = status.HTTP_401_UNAUTHORIZED,
         detail = 'unable to validate credentials',
     )
-    keys = webkeys.get_keys(database = database)
-    token_data: TokenData | None = None
-    for key in keys:
-        try:
-            payload = jwt.decode(token, key.public_pem, algorithms = [key.algorithm])
-            token_data = TokenData(**payload)
-        except:
-            pass
 
-    if token_data is None:
-        print('Unable to decode token')
-        raise credential_validation_exception
-
+    token_data = parse_token(token = token , database = database)
     service = services.get_by_name(database, service_name = token_data.subject)
     if service is None:
         print(f'Service not found for token_data: {token_data.model_dump_json(indent = 2)}')
@@ -120,10 +106,8 @@ async def authenticate_token(
 
     # The token has expired
     if token_data.expiration < datetime.now(tz = timezone.utc):
-        raise HTTPException(
-            status_code = status.HTTP_401_UNAUTHORIZED,
-            detail = 'expired',
-        ) 
+        credential_validation_exception.detail = 'expired'
+        raise credential_validation_exception
 
     securities = [Scope(scope = value) for value in security_scopes.scopes]
     for security in securities:
@@ -142,9 +126,9 @@ async def register_service_for_access_code(
     database: SqliteDatabase = Depends(database_dependency),
 ) -> TokenPublic:
     '''### Summary'''
-    service = await authenticate_password_credentials(
+    service = await authenticate_service(
         service_name = form.username,
-        password = form.password,
+        secret = form.password,
         database = database,
     )
     webkey = webkeys.get_latest_key(database = database)
@@ -164,12 +148,12 @@ async def register_service_for_access_code(
     access_token = create_token(
         data = access_token,
         webkey = webkey,
-        expires = timedelta(minutes = 10)
+        expires = runtime_settings.service_token_lifetime.access 
     )
     refresh_token = create_token(
         data = refresh_token,
         webkey = webkey,
-        expires = timedelta(days = 30)
+        expires = runtime_settings.service_token_lifetime.refresh 
     )
 
     return TokenPublic(
@@ -185,7 +169,7 @@ async def refresh_tokens(
     service: Annotated[
         Service,
         Security(
-            authenticate_token,
+            authenticate_service_token,
             scopes = [ScopeValues.token_refreh.scope_string],
         )
     ],
@@ -223,3 +207,33 @@ async def refresh_tokens(
         refresh_token = refresh_token,
         token_type = 'bearer',
     )
+
+
+
+class ServiceRegisterRequest(BaseModel):
+    service_name: str
+    secret: str
+    scopes: Sequence[str] 
+
+
+
+@router.post('/')
+def register_service(
+    form: ServiceRegisterRequest,
+    database: SqliteDatabase = Depends(database_dependency),
+):
+    #TODO: 1 check agains the current registration token.
+    database.execute('BEGIN')
+    services.insert(
+        database = database,
+        service_name = form.service_name,
+        secret = form.secret,
+    )
+
+    for value in form.scopes:
+        scopes.insert(
+            database = database,
+            scope = Scope(scope = value, provider = form.service_name)
+        )
+    database.execute('COMMIT')
+

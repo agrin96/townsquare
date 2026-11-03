@@ -8,9 +8,10 @@ from database.models.scope import DatabaseScope, Scope
 
 def get_user_scopes(database: SqliteDatabase, user_id: int) -> list[Scope]:
     return database.fetchall(
-        statements = dedent('''
+        statements = dedent('''--sql
             SELECT
-                scope 
+                scope,
+                provider
             FROM (
                 (
                     SELECT scope_id
@@ -31,7 +32,8 @@ def get_service_scopes(database: SqliteDatabase, service_id: int) -> list[Scope]
     return database.fetchall(
         statements = dedent('''
             SELECT
-                scope 
+                scope,
+                provider
             FROM (
                 (
                     SELECT scope_id
@@ -44,6 +46,21 @@ def get_service_scopes(database: SqliteDatabase, service_id: int) -> list[Scope]
         '''),
         return_type = Scope,
         bindings = {'id':  service_id}
+    )
+
+
+
+def get(database: SqliteDatabase, provider: str | None = None) -> list[DatabaseScope]:
+    if provider:
+        return database.fetchall(
+            statements = 'SELECT * FROM scopes WHERE provider=@provider',
+            return_type = DatabaseScope,
+            bindings = {'provider': provider}
+        )
+
+    return database.fetchall(
+        statements = 'SELECT * FROM scopes',
+        return_type = DatabaseScope,
     )
 
 
@@ -133,3 +150,16 @@ def assign_scopes_to_service(
         sequenceofbindings = [{'service': service_id, 'scope': s.id} for s in scopes]
     )
 
+
+
+def insert(database: SqliteDatabase, scope: Scope, ignore_if_exists: bool = False):
+    database.execute(
+        statements = dedent(f'''
+            INSERT{' OR IGNORE ' if ignore_if_exists else ' '}INTO scopes VALUES (
+                NULL,
+                @provider,
+                @scope
+            )
+        '''),
+        bindings = {'scope': str(scope), 'provider': scope.provider} 
+    )

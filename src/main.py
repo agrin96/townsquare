@@ -51,13 +51,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan = lifespan)
 app.include_router(routers.user.router)
+app.include_router(routers.security.router)
 app.include_router(routers.service.router)
+app.include_router(routers.admin.router)
+
 
 
 # TODO: 
-# 7. Add service registration method (service_name + password (random hash from source env))
-# 8. Add service endpoint for registering new scopes
 # 9. Add super admin method for CRUDing scopes/users/services.
+# 10. Move the scope add/get methods to a common route and have them require either admin or service scope.
+# 11. Figure out service authentication/registration. What do we actually need?
 
 
 def main():

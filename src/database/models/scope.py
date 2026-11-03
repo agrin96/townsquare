@@ -25,6 +25,7 @@ ScopeString = Annotated[
 
 class ScopeBase(BaseModel):
     scope: ScopeString 
+    provider: str = 'none'
 
     def __hash__(self) -> int:
         return hash(self.scope)
@@ -67,6 +68,7 @@ class DatabaseScope(ScopeBase):
     
     ### Parameters
     - `id` The internal database id of this row.
+    - `provider` The name of the service or user that added this scope.
     - `scope` The heirarchical sequence of permisssions from broadest to most specific.'''
     id: int
 
@@ -80,8 +82,6 @@ class Scope(ScopeBase):
     
     ### Parameters:
     - `scope` The heirarchical sequence of permisssions from broadest to most specific.'''
-
-
 
 
 

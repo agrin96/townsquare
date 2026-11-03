@@ -151,6 +151,38 @@ def delete(database: SqliteDatabase, service: Service):
 
 
 
+def insert(
+    database: SqliteDatabase,
+    service_name: str,
+    secret: str,
+    ignore_if_exists: bool = False,
+):
+    database.execute(
+        statements = dedent(f'''
+            INSERT{' OR IGNORE ' if ignore_if_exists else ' '}INTO services VALUES (
+                NULL,
+                @service_name,
+                @secret,
+                @token_lineage
+            ) 
+        '''),
+        bindings = {
+            'service_name': service_name,
+            'secret': secret,
+            'lineage': str(uuid4()),
+        }
+    )
+    created_service = database.fetchone(
+        statements = 'SELECT * FROM services WHERE service_name = @name',
+        return_type = DatabaseService,
+        bindings = {'name': service_name}
+    )
+    if created_service is None:
+        raise HTTPException(status_code = status.HTTP_500_INTERNAL_SERVER_ERROR)
+    return created_service
+
+
+
 def update_lineage(database: SqliteDatabase, service: Service) -> Service:
     new_lineage = uuid4()
     database.execute(
